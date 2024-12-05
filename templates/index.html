@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-semibold text-gray-700">Total VMs</h3>
+        <p class="text-3xl font-bold text-blue-600">{{ stats.total_vms }}</p>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-semibold text-gray-700">Clusters</h3>
+        <p class="text-3xl font-bold text-blue-600">{{ stats.total_clusters }}</p>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-semibold text-gray-700">Total Hosts</h3>
+        <p class="text-3xl font-bold text-blue-600">{{ stats.total_hosts }}</p>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-semibold text-gray-700">Total CPU Cores</h3>
+        <p class="text-3xl font-bold text-blue-600">{{ stats.total_cpu_cores }}</p>
+    </div>
+</div>
+
+<div class="bg-white rounded-lg shadow">
+    <div class="p-6">
+        <h2 class="text-xl font-bold text-gray-800 mb-4">Virtual Machines</h2>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead>
+                    <tr>
+                        <th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                        <th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPU</th>
+                        <th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Memory (GB)</th>
+                        <th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Guest OS</th>
+                        <th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for vm in vms %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ vm.name }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                {% if vm.power_state == 'poweredOn' %}bg-green-100 text-green-800
+                                {% else %}bg-red-100 text-red-800{% endif %}">
+                                {{ vm.power_state }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ vm.cpu }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ vm.memory_gb }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ vm.guest_os }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                            <button onclick="powerOperation('{{ vm.name }}', '{% if vm.power_state == "poweredOn" %}off{% else %}on{% endif %}')"
+                                class="text-blue-600 hover:text-blue-900">
+                                {% if vm.power_state == "poweredOn" %}Power Off{% else %}Power On{% endif %}
+                            </button>
+                            <button onclick="showConfigModal('{{ vm.name }}')"
+                                class="text-green-600 hover:text-green-900">Configure</button>
+                            <button onclick="if(confirmDelete('{{ vm.name }}')) deleteVM('{{ vm.name }}')"
+                                class="text-red-600 hover:text-red-900">Delete</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Configuration Modal -->
+<div id="configModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">Configure VM</h3>
+            <form id="configForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">CPU Cores</label>
+                    <input type="number" name="cpu" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Memory (GB)</label>
+                    <input type="number" name="memory" step="0.5" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button type="button" onclick="hideConfigModal()"
+                        class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancel</button>
+                    <button type="submit"
+                        class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentVM = '';
+
+function showConfigModal(vmName) {
+    currentVM = vmName;
+    document.getElementById('configModal').classList.remove('hidden');
+}
+
+function hideConfigModal() {
+    document.getElementById('configModal').classList.add('hidden');
+    document.getElementById('configForm').reset();
+}
+
+document.getElementById('configForm').onsubmit = async function(e) {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    
+    try {
+        const response = await fetch(`/vm/${currentVM}/config`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            const data = await response.json();
+            alert(data.error || 'Failed to update VM configuration');
+        }
+    } catch (error) {
+        alert('Error updating VM configuration');
+    }
+    
+    hideConfigModal();
+};
+
+async function powerOperation(vmName, action) {
+    try {
+        const formData = new FormData();
+        formData.append('action', action);
+        
+        const response = await fetch(`/vm/${vmName}/power`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            const data = await response.json();
+            alert(data.error || 'Failed to perform power operation');
+        }
+    } catch (error) {
+        alert('Error performing power operation');
+    }
+}
+
+async function deleteVM(vmName) {
+    try {
+        const response = await fetch(`/vm/${vmName}/delete`, {
+            method: 'POST'
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            const data = await response.json();
+            alert(data.error || 'Failed to delete VM');
+        }
+    } catch (error) {
+        alert('Error deleting VM');
+    }
+}
+</script>
+{% endblock %}
